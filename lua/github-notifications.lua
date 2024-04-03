@@ -28,45 +28,48 @@ local debounce = function(fn)
   end
 end
 
-local set_notifications = function(res)
-  local status = res.status
+local set_notifications = function(cb)
+  return function(res)
+    local status = res.status
 
-  if status == 200 then
-    local json = vim.fn.json_decode(res.body)
+    if status == 200 then
+      local json = vim.fn.json_decode(res.body)
 
-    for k, _ in pairs(M.notifications) do
-      M.notifications[k] = nil
-    end
-
-    for _, v in pairs(json) do
-      if M.ignore[v.id] then
-      elseif v ~= nil then
-        M.notifications[v.id] = v
+      for k, _ in pairs(M.notifications) do
+        M.notifications[k] = nil
       end
-    end
 
-    -- Reduce the debounce duration if necessary
-    for _, v in pairs(res.headers) do
-      local interval_match = v:match 'x%-poll%-interval: (%d+)'
-      if interval_match then
-        local interval = tonumber(interval_match)
-        local dd = state.debounce_duration
-
-        -- In the latter case, we should revert to the user's config
-        state.debounce_duration = interval > dd and interval or config.get 'debounce_duration'
+      for _, v in pairs(json) do
+        if M.ignore[v.id] then
+        elseif v ~= nil then
+          M.notifications[v.id] = v
+        end
       end
+
+      -- Reduce the debounce duration if necessary
+      for _, v in pairs(res.headers) do
+        local interval_match = v:match 'x%-poll%-interval: (%d+)'
+        if interval_match then
+          local interval = tonumber(interval_match)
+          local dd = state.debounce_duration
+
+          -- In the latter case, we should revert to the user's config
+          state.debounce_duration = interval > dd and interval or config.get 'debounce_duration'
+        end
+      end
+    elseif status == 401 then
+      vim.notify('Unauthorized request. Ensure username + token are valid', vim.log.levels.ERROR)
+    elseif status == 403 then
+      vim.notify('Forbidden. Ensure username + token are valid', vim.log.levels.ERROR)
+    elseif status == 422 then
+      vim.notify('Validation failure', vim.log.levels.ERROR)
     end
-  elseif status == 401 then
-    vim.notify('Unauthorized request. Ensure username + token are valid', vim.log.levels.ERROR)
-  elseif status == 403 then
-    vim.notify('Forbidden. Ensure username + token are valid', vim.log.levels.ERROR)
-  elseif status == 422 then
-    vim.notify('Validation failure', vim.log.levels.ERROR)
+    cb()
   end
 end
 
 -- Makes a new get request to the notifications API, refreshing the state variables.
-M.refresh = function()
+M.refresh = function(cb)
   debounce(function()
     a.run(
       a.wrap(function(update_callback)
@@ -105,7 +108,7 @@ M.refresh = function()
           update_callback(res)
         end
       end, 1),
-      set_notifications
+      set_notifications(cb)
     )
   end)()
 end
@@ -120,7 +123,7 @@ end
 
 M.statusline_notification_count = function()
   if state ~= nil then
-    M.refresh()
+    M.refresh(function() end)
   end
 
   local count = notification_count()
@@ -133,7 +136,7 @@ end
 
 M.statusline_notifications = function()
   if state ~= nil then
-    M.refresh()
+    M.refresh(function() end)
   end
 
   return {

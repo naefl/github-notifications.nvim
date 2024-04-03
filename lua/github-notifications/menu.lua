@@ -3,7 +3,7 @@ local config = require 'github-notifications.config'
 local previewer = require 'github-notifications.telescope.previewer'
 local format_type = require 'github-notifications.utils.format_type'
 local commands = require 'github-notifications.telescope.commands'
-local iso8601_to_unix = require 'github-notifications.utils.date'.iso8601_to_unix
+local iso8601_to_unix = require('github-notifications.utils.date').iso8601_to_unix
 
 local pickers = require 'telescope.pickers'
 local finders = require 'telescope.finders'
@@ -59,9 +59,7 @@ local entry_maker = function()
   end
 end
 
-M.notifications = function(opts)
-  ghn.refresh()
-
+M.open_picker = function()
   local results = {}
   for k, v in pairs(ghn.notifications) do
     if not ghn.ignore[k] then
@@ -71,36 +69,41 @@ M.notifications = function(opts)
   end
   opts = opts and not vim.tbl_isempty(opts) and opts or themes.get_dropdown {}
 
-  local sort_unread_first = config.get'sort_unread_first'
-  pickers.new(opts, {
-    prompt_title = 'GitHub Notifications',
-    finder = finders.new_table {
-      results = results,
-      entry_maker = entry_maker(),
-    },
-    previewer = previewer.new(opts),
-    sorter = sorters.Sorter:new{
-      scoring_function = function(_, _, _, entry)
-        local score = -iso8601_to_unix(entry.value.updated_at)
-        if sort_unread_first and not entry.value.unread then
-          return score + 2147483647
+  local sort_unread_first = config.get 'sort_unread_first'
+  pickers
+    .new(opts, {
+      prompt_title = 'GitHub Notifications',
+      finder = finders.new_table {
+        results = results,
+        entry_maker = entry_maker(),
+      },
+      previewer = previewer.new(opts),
+      sorter = sorters.Sorter:new {
+        scoring_function = function(_, _, _, entry)
+          local score = -iso8601_to_unix(entry.value.updated_at)
+          if sort_unread_first and not entry.value.unread then
+            return score + 2147483647
+          end
+          return score
+        end,
+      },
+      attach_mappings = function(prompt_bufnr, map)
+        for slug, key in pairs(config.get 'mappings') do
+          map('n', key, execute_command(prompt_bufnr, slug))
         end
-        return score
-      end
-    },
-    attach_mappings = function(prompt_bufnr, map)
-      for slug, key in pairs(config.get 'mappings') do
-        map('n', key, execute_command(prompt_bufnr, slug))
-      end
 
-      map('i', '<CR>', execute_command(prompt_bufnr, 'mark_read'))
-      for slug, key in pairs(config.get 'prompt_mappings') do
-        map('i', key, execute_command(prompt_bufnr, slug))
-      end
+        map('i', '<CR>', execute_command(prompt_bufnr, 'mark_read'))
+        for slug, key in pairs(config.get 'prompt_mappings') do
+          map('i', key, execute_command(prompt_bufnr, slug))
+        end
 
-      return true
-    end,
-  }):find()
+        return true
+      end,
+    })
+    :find()
+end
+M.notifications = function(opts)
+  ghn.refresh(M.open_picker)
 end
 
 return M
